@@ -11,6 +11,8 @@ let unsafe_byte source off pos = Bytes.unsafe_get source (off + pos)
 let unsafe_blit = Bytes.unsafe_blit
 let unsafe_chr = Char.unsafe_chr
 
+(* Base character decoders. They assume enough data. *)
+
 let r_repr source off len =
   (* assert (0 <= j && 0 <= l && j + l <= String.length s); *)
   (* assert (l = 3); *)
@@ -20,15 +22,26 @@ let r_repr source off len =
 
   let of_hex = function
     | '0' .. '9' as chr -> Char.code chr - Char.code '0'
-    | 'a' .. 'f' as chr -> Char.code chr - Char.code 'a'
+    | 'A' .. 'F' as chr -> Char.code chr - Char.code 'A'
     | _ -> assert false in
 
+  (* (General 8bit representation) Any octet, except a CR or LF that is part of
+     a CRLF line break of the canonical (standard) form of the data being
+     encoded, may be represented by an "=" followed by a two digit hexadecimal
+     representation of the octet's value. The digits of the hexadecimal
+     alphabet, for this purpose, are "0123456789ABCDEF". Uppercase letters must
+     be used; lowercase letters are not allowed. Thus, for example, the decimal
+     value 12 (US-ASCII form feed) can be represented by "=0C", and the decimal
+     value 61 (US- ASCII EQUAL SIGN) can be represented by "=3D". This rule must
+     be followed except when the following rules allow an alternative encoding.
+
+     See RFC2045 § 6.7. *)
+
   match unsafe_byte source off 0, a, b with
-  | '=', ('0' .. '9' | 'a' .. 'f'), ('0' .. '9' | 'a' .. 'f') ->
+  | '=', ('0' .. '9' | 'A' .. 'F'), ('0' .. '9' | 'A' .. 'F') ->
     `Repr ((of_hex a * 10) + of_hex b)
   | '=', '\r', '\n' ->
-    Fmt.epr "> Got a soft line break.\n%!"
-  ; `Soft_line_break
+    `Soft_line_break
   | e, a, b -> malformed source off 0 len
 
 let r_chr chr = `Chr chr
@@ -37,12 +50,30 @@ let r_wsp wsp = `Wsp wsp
 let r_line_break source off len =
   (* assert (0 <= j && 0 <= l && j + l <= String.length s); *)
   (* assert (l = 2); *)
+
   match Bytes.sub_string source off len with
   | "\r\n" -> `Line_break
   | _ -> malformed source off 0 len
 
 type src = [ `Channel of in_channel | `String of string | `Manual ]
 type decode = [ `Await | `End | `Malformed of string | `Line of string | `Data of string ]
+type input = [ `Malformed of string | `Soft_line_break | `Line_break | `Wsp of char | `Repr of int | `Chr of char ]
+
+(* [quoted-printable] has two kind to break a line but only one is relevant:
+   [`Line_break]. [`Soft_line_break] must be used if longer lines are to be
+   encoded with the quoted-printable encoding.
+
+   This provides a mechanism with which long lines are encoded in such a way as
+   to be restored by the user agent. The 76 character limit does not count the
+   trailing CRLF, but counts all other characters, including any equal signs.
+
+   [`Wsp] must not be represented at the end of the encoded line. We keep a
+   different buffer to store them and decide if they are followed by a printable
+   character (like "="), we decoded them as printable whitespaces.
+
+   [`Repr] is a decoded 8 bits value.
+
+   [`Chr] is only a printable character. *)
 
 type decoder =
   { src : src
@@ -62,8 +93,15 @@ type decoder =
   ; mutable byte_count : int
   ; mutable limit_count : int
   ; mutable count : int
-  ; mutable pp : decoder -> [ `Malformed of string | `Soft_line_break | `Line_break | `Wsp of char | `Repr of int | `Chr of char ] -> decode
+  ; mutable pp : decoder -> input -> decode
   ; mutable k : decoder -> decode }
+
+(* On decodes that overlap two (or more) [d.i] buffers, we use [t_fill] to copy
+   the input data to [d.t] and decode from there. If the [d.i] buffers are not
+   too small this is faster than continuation based byte per byte writes.
+
+   End of input is sgnaled by [d.i_pos = 0] and [d.i_len = min_int] which
+   implies that [i_rem d < 0] is [true]. *)
 
 let i_rem decoder = decoder.i_len - decoder.i_pos + 1
 
@@ -101,8 +139,9 @@ let ret k v byte_count decoder =
     then dangerous decoder true
   ; decoder.pp decoder v
 
-let malformed_line decoder =
+let malformed_line source off len decoder =
     Buffer.add_buffer decoder.t decoder.w
+  ; Buffer.add_subbytes decoder.t source off len
   ; let line = Buffer.contents decoder.t in
     Buffer.clear decoder.w
   ; Buffer.clear decoder.t
@@ -133,12 +172,12 @@ let rec t_fill k decoder =
 
 let rec t_decode_quoted_printable decoder =
   if decoder.h_len < decoder.h_need
-  then ret decode_quoted_printable (malformed_line decoder) decoder.h_len decoder
+  then ret decode_quoted_printable (malformed_line decoder.h 0 decoder.h_len decoder) decoder.h_len decoder
   else ret decode_quoted_printable (r_repr decoder.h 0 decoder.h_len) decoder.h_len decoder
 
 and t_decode_line_break decoder =
   if decoder.h_len < decoder.h_need
-  then ret decode_quoted_printable (malformed_line decoder) decoder.h_len decoder
+  then ret decode_quoted_printable (malformed_line decoder.h 0 decoder.h_len decoder) decoder.h_len decoder
   else ret decode_quoted_printable (r_line_break decoder.h 0 decoder.h_len) decoder.h_len decoder
 
 and decode_quoted_printable decoder =
@@ -148,19 +187,18 @@ and decode_quoted_printable decoder =
   then (if rem < 0 then `End else refill decode_quoted_printable decoder)
   else match unsafe_byte decoder.i decoder.i_off decoder.i_pos with
     | '\009' | '\032' as wsp -> (* HT | SPACE *)
-      Fmt.epr "> Got wsp.\n%!"
-    ; decoder.i_pos <- decoder.i_pos + 1
+      decoder.i_pos <- decoder.i_pos + 1
     ; ret decode_quoted_printable (r_wsp wsp) 1 decoder
     | '\013' -> (* CR *)
-      Fmt.epr "> Expect CRLF.\n%!"
-    ; t_need decoder 2
+      (* TODO: optimize it! *)
+      t_need decoder 2
     ; t_fill t_decode_line_break decoder
     | '=' ->
+      (* TODO: optimize it! *)
       t_need decoder 3
     ; t_fill t_decode_quoted_printable decoder
     | '\033' .. '\060' | '\062' .. '\126' as chr ->
-      Fmt.epr "> Got a printable character: %c.\n%!" chr
-    ; Buffer.add_buffer decoder.t decoder.w
+      Buffer.add_buffer decoder.t decoder.w
     ; Buffer.clear decoder.w
     ; decoder.i_pos <- decoder.i_pos + 1
     ; ret decode_quoted_printable (r_chr chr) 1 decoder
