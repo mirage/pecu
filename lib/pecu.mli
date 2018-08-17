@@ -1,3 +1,5 @@
+(** {1:decode Decode} *)
+
 type decoder
 (** The types for decoders. *)
 
@@ -31,22 +33,10 @@ val decode: decoder -> decode
     {b Note.} Repeated invocation always eventually returns [`End], even
     in case of errors. *)
 
-val decoder_line: decoder -> int
-(** [decoder_line d] is the line number of the last decoded (or malformed)
-   output. See {!decoder} for details. *)
-
-val decoder_column: decoder -> int
-(** [decoder_column d] is the column number of the last decoded (or malformed)
-   output. See {!decoder} for details. *)
-
 val decoder_byte_count: decoder -> int
 (** [decoder_byte_count d] is the number of characters already decoded on [d]
    (inclueded malformed ones). This is the last {!decode}'s end output offset
    counting from beginning of the stream. *)
-
-val decoder_count: decoder -> int
-(** [decoder_count d] is the number of characters already decoded on [d]
-   (including malformed ones). See {!decoder} for details. *)
 
 val decoder_src: decoder -> src
 (** [decoder_src d] is [d]'s input source. *)
@@ -57,3 +47,48 @@ val decoder_dangerous: decoder -> bool
    you are interested in a best-effort decoding you can still continue to decode
    even if [decoder_dangerous d] returns [true]. However, it could be an attack
    entry point in a server-context. *)
+
+(** {!:encode Encode} *)
+
+type dst = [ `Channel of out_channel | `Buffer of Buffer.t | `Manual ]
+(** The type for output destinations. With a [`Manual] destination the client
+   must provide output storage with {!dst}. *)
+
+type encode = [ `Await | `End | `Char of char | `Line_break ]
+
+type encoder
+(** The type for Quoted-Printable encoder. *)
+
+val encoder: dst -> encoder
+(** [encoder dst] is an encoder for quoted-printable that outputs to [dst]. *)
+
+val encode: encoder -> encode -> [ `Ok | `Partial ]
+(** [encode e v]: is
+    {ul
+    {- [`Partial] iff [e] has a [`Manual] destination and needs more output
+       storage. The client must use {!dst} to provide a new buffer
+       and then call {!encode} with [`Await] until [`Ok] is returned.}
+    {- [`Ok] when the encoder is ready to encode a new [`Char], [`Line_break]
+       or [`End]}}
+
+    For [`Manual] destination, encoding [`End] always return
+    [`Partial], the client should continue as usual with [`Await]
+    until [`Ok] is returned at which point {!dst_rem} [encoder] is
+    guaranteed to be the sode of the last provided buffer (i.e. nothing
+    was written).
+
+    {b Raises.} [Invalid_argument] if a [`Char], [`Line_break] or [`End]
+    is encoded after a [`Partial] encode. *)
+
+val encoder_dst: encoder -> dst
+(** [encoder_dst encoder] is [encoder]'s output destination. *)
+
+val dst: encoder -> Bytes.t -> int -> int -> unit
+(** [dst e s j l] provides [e] with [l] bytes to write, starting
+    at [j] in [s]. This byte range is written by calls to {!encode} with [e]
+    until [`Partial] is returned. Use {!dst_rem} to know the remaining
+    number of non-written free bytes in [s]. *)
+
+val dst_rem: encoder -> int
+(** [dst_rem e] is the remaining number of non-written, free bytes in the last
+   buffer provided with {!dst}. *)

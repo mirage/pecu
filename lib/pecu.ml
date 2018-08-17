@@ -1,6 +1,7 @@
 let io_buffer_size = 65536
 
 let invalid_arg fmt = Format.ksprintf (fun s -> invalid_arg s) fmt
+let invalid_encode () = invalid_arg "Expected `Await encode"
 let invalid_bounds off len = invalid_arg "Invalid bounds (off: %d, len: %d)" off len
 let strf = Format.asprintf
 let pp = Format.fprintf
@@ -10,6 +11,7 @@ let malformed source off pos len = `Malformed (Bytes.sub_string source (off + po
 let unsafe_byte source off pos = Bytes.unsafe_get source (off + pos)
 let unsafe_blit = Bytes.unsafe_blit
 let unsafe_chr = Char.unsafe_chr
+let unsafe_set_chr source off chr = Bytes.unsafe_set source off chr
 
 (* Base character decoders. They assume enough data. *)
 
@@ -22,7 +24,7 @@ let r_repr source off len =
 
   let of_hex = function
     | '0' .. '9' as chr -> Char.code chr - Char.code '0'
-    | 'A' .. 'F' as chr -> Char.code chr - Char.code 'A'
+    | 'A' .. 'F' as chr -> Char.code chr - Char.code 'A' + 10
     | _ -> assert false in
 
   (* (General 8bit representation) Any octet, except a CR or LF that is part of
@@ -39,7 +41,7 @@ let r_repr source off len =
 
   match unsafe_byte source off 0, a, b with
   | '=', ('0' .. '9' | 'A' .. 'F'), ('0' .. '9' | 'A' .. 'F') ->
-    `Repr ((of_hex a * 10) + of_hex b)
+    `Repr ((of_hex a * 16) + of_hex b)
   | '=', '\r', '\n' ->
     `Soft_line_break
   | e, a, b -> malformed source off 0 len
@@ -57,7 +59,7 @@ let r_line_break source off len =
 
 type src = [ `Channel of in_channel | `String of string | `Manual ]
 type decode = [ `Await | `End | `Malformed of string | `Line of string | `Data of string ]
-type input = [ `Malformed of string | `Soft_line_break | `Line_break | `Wsp of char | `Repr of int | `Chr of char ]
+type input = [ `Malformed of string | `Soft_line_break | `Line_break | `Wsp of char | `Repr of int | `Chr of char | `End ]
 
 (* [quoted-printable] has two kind to break a line but only one is relevant:
    [`Line_break]. [`Soft_line_break] must be used if longer lines are to be
@@ -87,12 +89,8 @@ type decoder =
   ; mutable h_len : int
   ; mutable h_need : int
   ; mutable unsafe : bool
-  ; mutable last_cr : bool
-  ; mutable line : int
-  ; mutable column : int
   ; mutable byte_count : int
   ; mutable limit_count : int
-  ; mutable count : int
   ; mutable pp : decoder -> input -> decode
   ; mutable k : decoder -> decode }
 
@@ -127,14 +125,13 @@ let refill k decoder = match decoder.src with
      let len = input ic decoder.i 0 (Bytes.length decoder.i) in
      (src decoder decoder.i 0 len; k decoder)
 
-let cr decoder v = decoder.last_cr <- v
 let dangerous decoder v = decoder.unsafe <- v
 let reset decoder = decoder.limit_count <- 0
 
 let ret k v byte_count decoder =
     decoder.k <- k
-  ; decoder.byte_count <- decoder.byte_count + 1
-  ; decoder.limit_count <- decoder.limit_count + 1
+  ; decoder.byte_count <- decoder.byte_count + byte_count
+  ; decoder.limit_count <- decoder.limit_count + byte_count
   ; if decoder.limit_count > 78
     then dangerous decoder true
   ; decoder.pp decoder v
@@ -184,7 +181,9 @@ and decode_quoted_printable decoder =
   let rem = i_rem decoder in
 
   if rem <= 0
-  then (if rem < 0 then `End else refill decode_quoted_printable decoder)
+  then (if rem < 0
+        then ret (fun decoder -> `End) `End 0 decoder
+        else refill decode_quoted_printable decoder)
   else match unsafe_byte decoder.i decoder.i_off decoder.i_pos with
     | '\009' | '\032' as wsp -> (* HT | SPACE *)
       decoder.i_pos <- decoder.i_pos + 1
@@ -212,33 +211,17 @@ and decode_quoted_printable decoder =
       decoder.i_pos <- decoder.i_pos + 1
     ; ret decode_quoted_printable (malformed decoder.i decoder.i_off j 1) 1 decoder
 
-let nline decoder =
-    decoder.column <- 0
-  ; decoder.line <- decoder.line + 1
-
-let ncol decoder =
-  decoder.column <- decoder.column + 1
-
-let ncount decoder =
-  decoder.count <- decoder.count + 1
-
 let f_fill_byte byte decoder =
-  if Buffer.length decoder.t >= 76
-  then dangerous decoder true
-  ; Buffer.add_char decoder.t (unsafe_chr byte)
+    Buffer.add_char decoder.t (unsafe_chr byte)
   ; decoder.k decoder
 
 let f_fill_chr chr decoder =
-  if Buffer.length decoder.t >= 76
-  then dangerous decoder true
-  ; Buffer.add_char decoder.t chr
+    Buffer.add_char decoder.t chr
   ; decoder.k decoder
 
 let pp_quoted_printable decoder = function
   | `Soft_line_break ->
     Buffer.add_buffer decoder.t decoder.w
-  ; decoder.column <- decoder.column + (Buffer.length decoder.w)
-  ; decoder.count <- decoder.count + (Buffer.length decoder.w)
   ; let data = Buffer.contents decoder.t in
     Buffer.clear decoder.w
   ; Buffer.clear decoder.t
@@ -250,45 +233,26 @@ let pp_quoted_printable decoder = function
     Buffer.clear decoder.w
   ; Buffer.clear decoder.t
   ; reset decoder
-  ; nline decoder
   ; `Line line
+
+  | `End ->
+    Buffer.add_buffer decoder.t decoder.w
+  ; let data = Buffer.contents decoder.t in
+    Buffer.clear decoder.w
+  ; Buffer.clear decoder.t
+  ; `Data data
 
   | `Wsp wsp ->
     Buffer.add_char decoder.w wsp
   ; decoder.k decoder
 
-  | `Repr 0x000A ->
-    let last_cr = decoder.last_cr in
-    cr decoder false
-  ; ncount decoder
-  ; if last_cr
-    then f_fill_byte 0x000A decoder
-    else ( nline decoder
-         ; f_fill_byte 0x000A decoder)
-
-  | `Repr 0x000D ->
-    cr decoder true
-  ; ncount decoder
-  ; nline decoder
-  ; f_fill_byte 0x000D decoder
-
   | `Repr byte ->
-    cr decoder false
-  ; ncount decoder
-  ; ncol decoder
-  ; f_fill_byte byte decoder
+    f_fill_byte byte decoder
 
   | `Chr chr ->
-    cr decoder false
-  ; ncount decoder
-  ; ncol decoder
-  ; f_fill_chr chr decoder
+    f_fill_chr chr decoder
 
-  | `Malformed _ as v ->
-    cr decoder false
-  ; ncount decoder
-  ; ncol decoder
-  ; v
+  | `Malformed _ as v -> v
 
 let decoder src =
   let pp = pp_quoted_printable in
@@ -308,19 +272,179 @@ let decoder src =
   ; h_need = 0
   ; h_len = 0
   ; unsafe = false
-  ; line = 1
-  ; column = 0
-  ; count = 0
   ; limit_count = 0
   ; byte_count = 0
-  ; last_cr = false
   ; pp
   ; k }
 
 let decode decoder = decoder.k decoder
-let decoder_line decoder = decoder.line
-let decoder_column decoder = decoder.column
 let decoder_byte_count decoder = decoder.byte_count
-let decoder_count decoder = decoder.count
 let decoder_src decoder = decoder.src
 let decoder_dangerous decoder = decoder.unsafe
+
+(* Encode *)
+
+type unsafe_char = char
+type dst = [ `Channel of out_channel | `Buffer of Buffer.t | `Manual ]
+type encode = [ `Await | `End | `Char of unsafe_char | `Line_break ]
+
+type encoder =
+  { dst : dst
+  ; mutable o : Bytes.t
+  ; mutable o_off : int
+  ; mutable o_pos : int
+  ; mutable o_len : int
+  ; t : Bytes.t
+  ; mutable t_pos : int
+  ; mutable t_len : int
+  ; mutable c_col : int
+  ; mutable k : encoder -> encode -> [ `Ok | `Partial ] }
+
+let o_rem encoder = encoder.o_len - encoder.o_pos + 1
+
+let dst encoder source off len =
+    if (off < 0 || len < 0 || off + len > Bytes.length source)
+    then invalid_bounds off len
+  ; encoder.o <- source
+  ; encoder.o_off <- off
+  ; encoder.o_pos <- 0
+  ; encoder.o_len <- len - 1
+
+let dst_rem = o_rem
+
+let partial k encoder = function
+  | `Await -> k encoder
+  | `Char _ | `Line_break | `End -> invalid_encode ()
+
+let flush k encoder = match encoder.dst with
+  | `Manual ->
+    encoder.k <- partial k
+  ; `Partial
+  | `Channel oc ->
+    output oc encoder.o encoder.o_off encoder.o_pos
+  ; encoder.o_pos <- 0
+  ; k encoder
+  | `Buffer b ->
+    let o = Bytes.unsafe_to_string encoder.o in
+    Buffer.add_substring b o encoder.o_off encoder.o_pos
+  ; encoder.o_pos <- 0
+  ; k encoder
+
+let t_range encoder len =
+    encoder.t_pos <- 0
+  ; encoder.t_len <- len
+
+let rec t_flush k encoder =
+  let blit encoder len =
+    unsafe_blit encoder.t encoder.t_pos encoder.o encoder.o_pos len
+  ; encoder.o_pos <- encoder.o_pos + len
+  ; encoder.t_pos <- encoder.t_pos + len in
+
+  let rem = o_rem encoder in
+  let len = encoder.t_len - encoder.t_pos + 1 in
+
+  if rem < len
+  then ( blit encoder rem
+       ; flush (t_flush k) encoder)
+  else ( blit encoder len
+       ; k encoder)
+
+let to_hex code = match Char.unsafe_chr code with
+  | '\000' .. '\009' -> Char.chr (Char.code '0' + code)
+  | '\010' .. '\015' -> Char.chr (Char.code 'A' + code - 10)
+  | _ -> assert false
+
+let rec encode_quoted_printable encoder v =
+  let k col_count encoder =
+    encoder.c_col <- encoder.c_col + col_count
+  ; encoder.k <- encode_quoted_printable
+  ; `Ok in
+
+  match v with
+  | `Await -> k 0 encoder
+  | `End -> flush (k 0) encoder
+  | `Line_break ->
+    let rem = o_rem encoder in
+
+    let s, j, k =
+      if rem < 2
+      then ( t_range encoder 2
+           ; encoder.t, 0, t_flush (k 2))
+      else ( let j = encoder.o_pos in
+             encoder.o_pos <- encoder.o_pos + 2
+           ; encoder.o, encoder.o_off + j, (k 2)) in
+
+      unsafe_set_chr s j '\r'
+    ; unsafe_set_chr s (j + 1) '\n'
+    ; encoder.c_col <- 0
+    ; k encoder
+  | `Char chr ->
+    let rem = o_rem encoder in
+
+    if rem < 1
+    then flush (fun encoder -> encode_quoted_printable encoder v) encoder
+    else if encoder.c_col = 75
+    then encode_soft_line_break (fun encoder -> encode_quoted_printable encoder v) encoder
+    else match chr with
+      | '\033' .. '\060' | '\062' .. '\126' ->
+        unsafe_set_chr encoder.o (encoder.o_off + encoder.o_pos) chr
+      ; encoder.o_pos <- encoder.o_pos + 1
+      ; k 1 encoder
+      | unsafe_chr ->
+        if encoder.c_col < 73
+        then
+         ( let hi = to_hex (Char.code unsafe_chr / 16) in
+           let lo = to_hex (Char.code unsafe_chr mod 16) in
+
+           let s, j, k =
+             if rem < 3
+             then (t_range encoder 3
+                  ; encoder.t, 0, t_flush (k 3))
+             else
+               ( let j = encoder.o_pos in
+                 encoder.o_pos <- encoder.o_pos + 3
+               ; encoder.o, encoder.o_off + j, (k 3)) in
+
+           unsafe_set_chr s j '='
+         ; unsafe_set_chr s (j + 1) hi
+         ; unsafe_set_chr s (j + 2) lo
+         ; k encoder)
+        else
+          encode_soft_line_break (fun encoder -> encode_quoted_printable encoder v) encoder
+
+and encode_soft_line_break k encoder =
+  let rem = o_rem encoder in
+
+  let s, j, k =
+    if rem < 3
+    then (t_range encoder 3
+         ; encoder.t, 0, t_flush k)
+    else
+      ( let j = encoder.o_pos in
+        encoder.o_pos <- encoder.o_pos + 3
+      ; encoder.o, encoder.o_off + j, k) in
+
+    unsafe_set_chr s j '='
+  ; unsafe_set_chr s (j + 1) '\r'
+  ; unsafe_set_chr s (j + 2) '\n'
+  ; encoder.c_col <- 0
+  ; k encoder
+
+let encoder dst =
+  let o, o_off, o_pos, o_len = match dst with
+    | `Manual -> Bytes.empty, 1, 0, 0
+    | `Buffer _
+    | `Channel _ -> Bytes.create io_buffer_size, 0, 0, io_buffer_size - 1 in
+  { dst
+  ; o_off
+  ; o_pos
+  ; o_len
+  ; o
+  ; t = Bytes.create 3
+  ; t_pos = 1
+  ; t_len = 0
+  ; c_col = 0
+  ; k = encode_quoted_printable }
+
+let encode encoder v = encoder.k encoder v
+let encoder_dst encoder = encoder.dst
