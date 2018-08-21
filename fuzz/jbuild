@@ -7,3 +7,8 @@
  ((name test)
   (modules (test))
   (libraries (pecu fmt rresult astring cmdliner))))
+
+(alias
+ ((name runtest)
+  (deps (iso.exe))
+  (action (run ${<}))))
