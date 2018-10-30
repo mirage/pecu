@@ -28,7 +28,7 @@ val decode: decoder -> decode
        best-effort decoding you can still continue to decode after an error
        until the decode synchronizes again on valid bytes.}
     {- [`Data data] if a [data] sequence value was decoded.}
-    {- [`Line line] if a [line seauence value plus a line-break was decoded.]}}
+    {- [`Line line] if a [line sequence value plus a line-break was decoded.]}}
 
     {b Note.} Repeated invocation always eventually returns [`End], even
     in case of errors. *)
