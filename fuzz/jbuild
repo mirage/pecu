@@ -1,9 +1,0 @@
-(executable
- ((name iso)
-  (modules (iso))
-  (libraries (pecu fmt astring crowbar))))
-
-(alias
- ((name runfuzz)
-  (deps (iso.exe))
-  (action (run ${<}))))
