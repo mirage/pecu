@@ -293,6 +293,167 @@ let decoder_byte_count decoder = decoder.byte_count
 let decoder_src decoder = decoder.src
 let decoder_dangerous decoder = decoder.unsafe
 
+module Inline = struct
+  (* XXX(dinosaure): I want structural typing and row polymophism on record,
+     please. *)
+
+  type unsafe_char = char
+  type decode = [`Await | `End | `Malformed of string | `Char of unsafe_char]
+
+  type input =
+    [`Malformed of string | `Wsp | `Chr of char | `Repr of int | `End]
+
+  let r_repr source off len =
+    (* assert (0 <= j && 0 <= l && j + l <= String.length s); *)
+    (* assert (l = 3); *)
+    let a = unsafe_byte source off 1 in
+    let b = unsafe_byte source off 2 in
+    let of_hex = function
+      | '0' .. '9' as chr -> Char.code chr - Char.code '0'
+      | 'A' .. 'F' as chr -> Char.code chr - Char.code 'A' + 10
+      | _ -> assert false
+    in
+    match (unsafe_byte source off 0, a, b) with
+    | '=', ('0' .. '9' | 'A' .. 'F'), ('0' .. '9' | 'A' .. 'F') ->
+        `Repr ((of_hex a * 16) + of_hex b)
+    | _e, _a, _b -> malformed source off 0 len
+
+  let r_wsp = `Wsp
+
+  type decoder =
+    { src: src
+    ; mutable i: Bytes.t
+    ; mutable i_off: int
+    ; mutable i_pos: int
+    ; mutable i_len: int
+    ; h: Bytes.t
+    ; mutable h_len: int
+    ; mutable h_need: int
+    ; mutable byte_count: int
+    ; mutable pp: decoder -> input -> decode
+    ; mutable k: decoder -> decode }
+
+  let i_rem decoder = decoder.i_len - decoder.i_pos + 1
+
+  let end_of_input decoder =
+    decoder.i <- Bytes.empty ;
+    decoder.i_off <- 0 ;
+    decoder.i_pos <- 0 ;
+    decoder.i_len <- min_int
+
+  let src decoder source off len =
+    if off < 0 || len < 0 || off + len > Bytes.length source then
+      invalid_bounds off len
+    else if len = 0 then end_of_input decoder
+    else (
+      decoder.i <- source ;
+      decoder.i_off <- off ;
+      decoder.i_pos <- 0 ;
+      decoder.i_len <- len - 1 )
+
+  let refill k decoder =
+    match decoder.src with
+    | `Manual ->
+        decoder.k <- k ;
+        `Await
+    | `String _ -> end_of_input decoder ; k decoder
+    | `Channel ic ->
+        let len = input ic decoder.i 0 (Bytes.length decoder.i) in
+        src decoder decoder.i 0 len ;
+        k decoder
+
+  let ret k v byte_count decoder =
+    decoder.k <- k ;
+    decoder.byte_count <- decoder.byte_count + byte_count ;
+    decoder.pp decoder v
+
+  let t_need decoder need =
+    decoder.h_len <- 0 ;
+    decoder.h_need <- need
+
+  let rec t_fill k decoder =
+    let blit decoder len =
+      unsafe_blit decoder.i
+        (decoder.i_off + decoder.i_pos)
+        decoder.h decoder.h_len len ;
+      decoder.i_pos <- decoder.i_pos + len ;
+      decoder.h_len <- decoder.h_len + len
+    in
+    let rem = i_rem decoder in
+    if rem < 0 (* end of input *) then k decoder
+    else
+      let need = decoder.h_need - decoder.h_len in
+      if rem < need then (
+        blit decoder rem ;
+        refill (t_fill k) decoder )
+      else ( blit decoder need ; k decoder )
+
+  let rec t_decode_inline_quoted_printable decoder =
+    if decoder.h_len < decoder.h_need then
+      ret decode_inline_quoted_printable
+        (malformed decoder.h 0 0 decoder.h_len)
+        decoder.h_len decoder (* XXX(dinosaure): malformed line? *)
+    else
+      ret decode_inline_quoted_printable
+        (r_repr decoder.h 0 decoder.h_len)
+        decoder.h_len decoder
+
+  and decode_inline_quoted_printable decoder =
+    let rem = i_rem decoder in
+    if rem <= 0 then
+      if rem < 0 then ret (fun _decoder -> `End) `End 0 decoder
+      else refill decode_inline_quoted_printable decoder
+    else
+      match unsafe_byte decoder.i decoder.i_off decoder.i_pos with
+      | '_' ->
+          decoder.i_pos <- decoder.i_pos + 1 ;
+          ret decode_inline_quoted_printable r_wsp 1 decoder
+      | '=' ->
+          t_need decoder 3 ;
+          t_fill t_decode_inline_quoted_printable decoder
+      | ('\033' .. '\060' | '\062' .. '\126') as chr ->
+          decoder.i_pos <- decoder.i_pos + 1 ;
+          ret decode_inline_quoted_printable (r_chr chr) 1 decoder
+      | _ ->
+          let j = decoder.i_pos in
+          decoder.i_pos <- decoder.i_pos + 1 ;
+          ret decode_inline_quoted_printable
+            (malformed decoder.i decoder.i_off j 1)
+            1 decoder
+
+  let pp_inline_quoted_printable _decoder = function
+    | `Wsp -> `Char ' '
+    | `Chr chr -> `Char chr
+    | `Repr byte -> `Char (unsafe_chr byte)
+    | `End -> `End
+    | `Malformed _ as v -> v
+
+  let decoder src =
+    let pp = pp_inline_quoted_printable in
+    let k = decode_inline_quoted_printable in
+    let i, i_off, i_pos, i_len =
+      match src with
+      | `Manual -> (Bytes.empty, 0, 1, 0)
+      | `Channel _ -> (Bytes.create io_buffer_size, 0, 1, 0)
+      | `String s -> (Bytes.unsafe_of_string s, 0, 0, String.length s - 1)
+    in
+    { src
+    ; i_off
+    ; i_pos
+    ; i_len
+    ; i
+    ; h= Bytes.create 3
+    ; h_need= 0
+    ; h_len= 0
+    ; byte_count= 0
+    ; pp
+    ; k }
+
+  let decode decoder = decoder.k decoder
+  let decoder_byte_count decoder = decoder.byte_count
+  let decoder_src decoder = decoder.src
+end
+
 (* Encode *)
 
 type unsafe_char = char
