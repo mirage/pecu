@@ -28,7 +28,6 @@ let pp_scalar : type buffer.
 let pp_raw = pp_scalar ~get:String.get ~length:String.length
 
 exception Bigger_than_80_column of string
-
 exception Malformed of string
 
 let pp_value ppf = function
@@ -122,7 +121,36 @@ let test file =
   let () = ensure o in
   Alcotest.(check raw) "iso" u v
 
+let rfc2047 =
+  let make i (value, expect) =
+    Alcotest.test_case (Fmt.strf "rfc2047:%d" i) `Quick
+    @@ fun () ->
+    let decoder = Pecu.Inline.decoder (`String value) in
+    let buffer = Buffer.create (String.length value) in
+    let rec go () =
+      match Pecu.Inline.decode decoder with
+      | `Await -> assert false
+      | `Char chr -> Buffer.add_char buffer chr ; go ()
+      | `Malformed s -> raise (Malformed s)
+      | `End -> ()
+    in
+    go () ;
+    let result = Buffer.contents buffer in
+    Alcotest.(check string)
+      (Fmt.strf "compare %s with %s" result expect)
+      result expect
+  in
+  List.mapi make
+    [ ("a", "a")
+    ; ("a_b", "a b")
+    ; ("Keith_Moore", "Keith Moore")
+    ; ("Keld_J=F8rn_Simonsen", "Keld J\xf8rn Simonsen")
+    ; ("Andr=E9", "Andr\xe9")
+    ; ("Olle_J=E4rnefors", "Olle J\xe4rnefors")
+    ; ("Patrick_F=E4ltstr=F6m", "Patrick F\xe4ltstr\xf6m") ]
+
 let tests () =
-  Alcotest.run "pecu" [("input fuzz", List.map test (walk "contents"))]
+  Alcotest.run "pecu"
+    [("input fuzz", List.map test (walk "contents")); ("rfc2047", rfc2047)]
 
 let () = tests ()
