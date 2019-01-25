@@ -534,6 +534,10 @@ module Inline = struct
       if rem < 1 then
         flush (fun encoder -> encode_quoted_printable encoder v) encoder
       else match chr with
+        | ' ' ->
+          unsafe_set_chr encoder.o (encoder.o_off + encoder.o_pos) '_' ;
+          encoder.o_pos <- encoder.o_pos + 1 ;
+          k encoder
         | '\033' .. '\060' | '\062' .. '\126' ->
           unsafe_set_chr encoder.o (encoder.o_off + encoder.o_pos) chr ;
           encoder.o_pos <- encoder.o_pos + 1 ;
