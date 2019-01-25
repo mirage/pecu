@@ -135,10 +135,20 @@ let rfc2047 =
       | `End -> ()
     in
     go () ;
-    let result = Buffer.contents buffer in
+    let result0 = Buffer.contents buffer in
+    Buffer.clear buffer ;
+    let encoder = Pecu.Inline.encoder (`Buffer buffer) in
+    String.iter (fun chr -> match Pecu.Inline.encode encoder (`Char chr) with
+        | `Ok -> ()
+        | `Partial -> assert false) result0 ;
+    let () = ignore @@ Pecu.Inline.encode encoder `End in
+    let result1 = Buffer.contents buffer in
     Alcotest.(check string)
-      (Fmt.strf "compare %s with %s" result expect)
-      result expect
+      (Fmt.strf "compare %s with %s" result0 expect)
+      result0 expect ;
+    Alcotest.(check string)
+      (Fmt.strf "compare %s with %s" result1 value)
+      result1 value ;
   in
   List.mapi make
     [ ("a", "a")
