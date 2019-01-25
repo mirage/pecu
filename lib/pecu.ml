@@ -452,6 +452,132 @@ module Inline = struct
   let decode decoder = decoder.k decoder
   let decoder_byte_count decoder = decoder.byte_count
   let decoder_src decoder = decoder.src
+
+  type dst = [`Channel of out_channel | `Buffer of Buffer.t | `Manual]
+  type encode = [`Await | `End | `Char of unsafe_char]
+
+  type encoder =
+    { dst: dst
+    ; mutable o: Bytes.t
+    ; mutable o_off: int
+    ; mutable o_pos: int
+    ; mutable o_len: int
+    ; t: Bytes.t
+    ; mutable t_pos: int
+    ; mutable t_len: int
+    ; mutable k: encoder -> encode -> [`Ok | `Partial] }
+
+  let o_rem encoder = encoder.o_len - encoder.o_pos + 1
+
+  let dst encoder source off len =
+    if off < 0 || len < 0 || off + len > Bytes.length source
+    then invalid_bounds off len ;
+    encoder.o <- source ;
+    encoder.o_off <- off ;
+    encoder.o_pos <- 0 ;
+    encoder.o_len <- len - 1
+
+  let dst_rem = o_rem
+
+  let partial k encoder = function
+    | `Await -> k encoder
+    | `Char _ | `End -> invalid_encode ()
+
+  let flush k encoder =
+    match encoder.dst with
+    | `Manual ->
+      encoder.k <- partial k ;
+      `Partial
+    | `Channel oc ->
+      output oc encoder.o encoder.o_off encoder.o_pos ;
+      encoder.o_pos <- 0 ;
+      k encoder
+    | `Buffer b ->
+      let o = Bytes.unsafe_to_string encoder.o in
+      Buffer.add_substring b o encoder.o_off encoder.o_pos ;
+      encoder.o_pos <- 0 ;
+      k encoder
+
+  let t_range encoder len =
+    encoder.t_pos <- 0 ;
+    encoder.t_len <- len
+
+  let rec t_flush k encoder =
+    let blit encoder len =
+      unsafe_blit encoder.t encoder.t_pos encoder.o encoder.o_pos len ;
+      encoder.o_pos <- encoder.o_pos + len ;
+      encoder.t_pos <- encoder.t_pos + len
+    in
+    let rem = o_rem encoder in
+    let len = encoder.t_len - encoder.t_pos + 1 in
+    if rem < len then (
+      blit encoder rem ;
+      flush (t_flush k) encoder )
+    else ( blit encoder len ; k encoder )
+
+  let to_hex code =
+    match Char.unsafe_chr code with
+    | '\000' .. '\009' -> Char.chr (Char.code '0' + code)
+    | '\010' .. '\015' -> Char.chr (Char.code 'A' + code - 10)
+    | _ -> assert false
+
+  let rec encode_quoted_printable encoder v =
+    let k encoder =
+      encoder.k <- encode_quoted_printable ;
+      `Ok
+    in
+    match v with
+    | `Await -> k encoder
+    | `End -> flush k encoder
+    | `Char chr ->
+      let rem = o_rem encoder in
+      if rem < 1 then
+        flush (fun encoder -> encode_quoted_printable encoder v) encoder
+      else match chr with
+        | ' ' ->
+          unsafe_set_chr encoder.o (encoder.o_off + encoder.o_pos) '_' ;
+          encoder.o_pos <- encoder.o_pos + 1 ;
+          k encoder
+        | '\033' .. '\060' | '\062' .. '\126' ->
+          unsafe_set_chr encoder.o (encoder.o_off + encoder.o_pos) chr ;
+          encoder.o_pos <- encoder.o_pos + 1 ;
+          k encoder
+        | unsafe_chr ->
+          let hi = to_hex (Char.code unsafe_chr / 16) in
+          let lo = to_hex (Char.code unsafe_chr mod 16) in
+          let s, j, k =
+            if rem < 3 then (
+              t_range encoder 3 ;
+              (encoder.t, 0, t_flush k) )
+            else
+              let j = encoder.o_pos in
+              encoder.o_pos <- encoder.o_pos + 3 ;
+              (encoder.o, encoder.o_off + j, k)
+          in
+          unsafe_set_chr s j '=' ;
+          unsafe_set_chr s (j + 1) hi ;
+          unsafe_set_chr s (j + 2) lo ;
+          k encoder
+
+  let encoder dst =
+    let o, o_off, o_pos, o_len =
+      match dst with
+      | `Manual -> (Bytes.empty, 1, 0, 0)
+      | `Buffer _ | `Channel _ ->
+        (Bytes.create io_buffer_size, 0, 0, io_buffer_size - 1)
+    in
+    { dst
+    ; o_off
+    ; o_pos
+    ; o_len
+    ; o
+    ; t= Bytes.create 3
+    ; t_pos= 1
+    ; t_len= 0
+    ; k= encode_quoted_printable }
+
+  let encode encoder v = encoder.k encoder v
+  let encoder_dst encoder = encoder.dst
 end
 
 (* Encode *)

@@ -84,6 +84,18 @@ module Inline : sig
 
   val decoder_src : decoder -> src
   (** [decoder_src d] is [d]'s input source. *)
+
+  type dst = [`Channel of out_channel | `Buffer of Buffer.t | `Manual]
+
+  type encode = [`Await | `End | `Char of char]
+
+  type encoder
+
+  val encoder : dst -> encoder
+  val encode : encoder -> encode -> [`Ok | `Partial]
+  val encoder_dst : encoder -> dst
+  val dst : encoder -> Bytes.t -> int -> int -> unit
+  val dst_rem : encoder -> int
 end
 
 (** {2:encode Encode} *)
