@@ -311,10 +311,12 @@ module Inline = struct
     let of_hex = function
       | '0' .. '9' as chr -> Char.code chr - Char.code '0'
       | 'A' .. 'F' as chr -> Char.code chr - Char.code 'A' + 10
+      | 'a' .. 'f' as chr -> Char.code chr - Char.code 'a' + 10
+      (* RFC 2047 says: uppercase SHOULD be used for hexadecimal digits. *)
       | _ -> assert false
     in
     match (unsafe_byte source off 0, a, b) with
-    | '=', ('0' .. '9' | 'A' .. 'F'), ('0' .. '9' | 'A' .. 'F') ->
+    | '=', ('0' .. '9' | 'A' .. 'F' | 'a' .. 'f'), ('0' .. '9' | 'A' .. 'F' | 'a' .. 'f') ->
         `Repr ((of_hex a * 16) + of_hex b)
     | _e, _a, _b -> malformed source off 0 len
 
