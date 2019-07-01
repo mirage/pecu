@@ -7,7 +7,8 @@ bug-reports:  "https://github.com/dinosaure/pecu/issues"
 dev-repo:     "git+https://github.com/dinosaure/pecu.git"
 doc:          "https://dinosaure.github.io/pecu/"
 license:      "MIT"
-synopsis:     "Encoder/Decoder of Quoted-Printable (RFC2045)"
+synopsis:     "Encoder/Decoder of Quoted-Printable (RFC2045 & RFC2047)"
+description:  "Encoder/Decoder of Quoted-Printable (RFC2045 & RFC2047)"
 
 build: [
   ["dune" "subst"]
