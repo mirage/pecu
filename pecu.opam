@@ -8,7 +8,8 @@ dev-repo:     "git+https://github.com/mirage/pecu.git"
 doc:          "https://mirage.github.io/pecu/"
 license:      "MIT"
 synopsis:     "Encoder/Decoder of Quoted-Printable (RFC2045 & RFC2047)"
-description:  "Encoder/Decoder of Quoted-Printable (RFC2045 & RFC2047)"
+description:  """A non-blocking encoder/decoder of Quoted-Printable according to
+RFC2045 and RFC2047 (about encoded-word). Useful to translate contents of emails."""
 
 build: [
   ["dune" "build" "-p" name "-j" jobs]
