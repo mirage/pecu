@@ -11,16 +11,13 @@ synopsis:     "Encoder/Decoder of Quoted-Printable (RFC2045 & RFC2047)"
 description:  "Encoder/Decoder of Quoted-Printable (RFC2045 & RFC2047)"
 
 build: [
-  ["dune" "subst"]
   ["dune" "build" "-p" name "-j" jobs]
   ["dune" "runtest" "-p" name "-j" jobs] {with-test}
 ]
 
 depends: [
   "ocaml" {>= "4.03.0"}
-  "dune" {build}
-  "fmt"
-  "rresult"
-  "cmdliner"
+  "dune"
+  "fmt" {with-test}
   "alcotest" {with-test}
 ]
