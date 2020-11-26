@@ -1,3 +1,12 @@
+v0.5 2020-11-26 Paris (France)
+------------------------------------
+
+* **breaking changes** The encoder flush
+  at any emission of `\r\n`. It can break
+  some assumptions about the behavior of
+  `Pecu.encode`.
+* Add empty .ocamlformat file
+
 v0.4 2020-03-13 Paris (France)
 ------------------------------------
 
