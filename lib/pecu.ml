@@ -677,7 +677,7 @@ let rec encode_quoted_printable encoder v =
       unsafe_set_chr s j '\r' ;
       unsafe_set_chr s (j + 1) '\n' ;
       encoder.c_col <- 0 ;
-      k encoder
+      flush k encoder
   | `Char chr -> (
       let rem = o_rem encoder in
       if rem < 1 then
@@ -729,7 +729,7 @@ and encode_soft_line_break k encoder =
   unsafe_set_chr s (j + 1) '\r' ;
   unsafe_set_chr s (j + 2) '\n' ;
   encoder.c_col <- 0 ;
-  k encoder
+  flush k encoder
 
 let encoder dst =
   let o, o_off, o_pos, o_len =

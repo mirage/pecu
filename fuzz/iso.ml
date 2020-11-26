@@ -51,47 +51,40 @@ let iso input =
   let tmp = Bytes.create 0x8000 in
   let res = Bytes.create (String.length input) in
   let buf = Buffer.create (String.length input * 2) in
-
-  let rec decode j =
-    if Pecu.decoder_dangerous decoder
-    then raise (Bigger_than_80_column (Buffer.contents buf))
-
-  ; match Pecu.decode decoder with
-  | `Await -> j
-  | `Data data ->
-    Bytes.blit_string data 0 res j (String.length data)
-  ; decode (j + String.length data)
-  | `Line line ->
-    Bytes.blit_string line 0 res j (String.length line)
-  ; Bytes.set res (j + String.length line) '\n'
-  ; decode (j + String.length line + 1)
-  | `End -> j
-  | `Malformed s -> raise (Malformed s) in
-
-  let rec encode i j =
-    let v =
-      if String.length input = i
-      then `End
-      else match String.get input i with
-        | '\n' -> `Line_break
-        | chr -> `Char chr in
-
-    match Pecu.encode encoder v with
-    | `Ok -> encode (succ i) j
+  let rec decode dpos epos =
+    if Pecu.decoder_dangerous decoder then
+      raise (Bigger_than_80_column (Buffer.contents buf)) ;
+    match Pecu.decode decoder with
+    | `Await -> encode dpos epos (Pecu.encode encoder `Await)
+    | `Data data ->
+        Bytes.blit_string data 0 res dpos (String.length data) ;
+        decode (dpos + String.length data) epos
+    | `Line line ->
+        Bytes.blit_string line 0 res dpos (String.length line) ;
+        Bytes.set res (dpos + String.length line) '\n' ;
+        decode (dpos + String.length line + 1) epos
+    | `End -> (Bytes.sub_string res 0 dpos, Buffer.contents buf)
+    | `Malformed s -> raise (Malformed s)
+  and encode dpos epos = function
+    | `Ok ->
+      if epos > String.length input
+      then
+        ( Pecu.src decoder tmp 0 0
+        ; decode dpos epos )
+      else
+        let cmd =
+          if epos >= String.length input then `End
+          else if input.[epos] = '\n' then `Line_break
+          else `Char input.[epos] in
+        encode dpos (succ epos) (Pecu.encode encoder cmd)
     | `Partial ->
-      Buffer.add_subbytes buf tmp 0 (0x8000 - (Pecu.dst_rem encoder))
-    ; Pecu.src decoder tmp 0 (0x8000 - (Pecu.dst_rem encoder))
-    ; Pecu.dst encoder tmp 0 0x8000
-    ; match v with
-      | `End ->
-        let j = decode j in
-        Pecu.src decoder tmp 0 0
-      ; let j = decode j in
-        Bytes.sub_string res 0 j, Buffer.contents buf
-      | _ -> encode i (decode j) in
-
-    Pecu.dst encoder tmp 0 0x8000
-  ; encode 0 0
+        Buffer.add_subbytes buf tmp 0 (0x8000 - Pecu.dst_rem encoder) ;
+        Pecu.src decoder tmp 0 (0x8000 - Pecu.dst_rem encoder) ;
+        Pecu.dst encoder tmp 0 0x8000 ;
+        decode dpos epos in
+  Pecu.dst encoder tmp 0 0x8000 ;
+  let cmd = if String.length input > 0 then `Char input.[0] else `End in
+  encode 0 1 (Pecu.encode encoder cmd)
 
 let ensure str =
   Astring.String.cuts ~sep:"\r\n" str
