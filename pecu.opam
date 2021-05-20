@@ -20,4 +20,5 @@ depends: [
   "dune"
   "fmt" {with-test}
   "alcotest" {with-test}
+  "crowbar" {with-test}
 ]
