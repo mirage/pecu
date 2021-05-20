@@ -259,8 +259,14 @@ let pp_quoted_printable decoder = function
   | `Wsp wsp ->
       Buffer.add_char decoder.w wsp ;
       decoder.k decoder
-  | `Repr byte -> f_fill_byte byte decoder
-  | `Chr chr -> f_fill_chr chr decoder
+  | `Repr byte ->
+      Buffer.add_buffer decoder.t decoder.w ;
+      Buffer.clear decoder.w ;
+      f_fill_byte byte decoder
+  | `Chr chr ->
+      Buffer.add_buffer decoder.t decoder.w ;
+      Buffer.clear decoder.w ;
+      f_fill_chr chr decoder
   | `Malformed _ as v -> v
 
 let decoder src =
