@@ -157,8 +157,40 @@ let rfc2047 =
     ; ("Olle_J=E4rnefors", "Olle J\xe4rnefors")
     ; ("Patrick_F=E4ltstr=F6m", "Patrick F\xe4ltstr\xf6m") ]
 
+let qp =
+{qp|J'interdis aux marchands de vanter trop leurs marchandises. Car ils se font=
+ vite p=C3=A9dagogues et t'enseignent comme but ce qui n'est par essence qu=
+'un moyen, et te trompant ainsi sur la route =C3=A0 suivre les voil=C3=A0 =
+bient=C3=B4t qui te d=C3=A9gradent, car si leur musique est vulgaire il=
+s te fabriquent pour te la vendre une =C3=A2me vulgaire.            
+   =E2=80=94=E2=80=89Antoine de Saint-Exup=C3=A9ry, Citadelle (1948)
+
+|qp}
+
+let citadelle = {unicode|J'interdis aux marchands de vanter trop leurs marchandises. Car ils se font vite pédagogues et t'enseignent comme but ce qui n'est par essence qu'un moyen, et te trompant ainsi sur la route à suivre les voilà bientôt qui te dégradent, car si leur musique est vulgaire ils te fabriquent pour te la vendre une âme vulgaire.
+   — Antoine de Saint-Exupéry, Citadelle (1948)
+
+|unicode}
+
+let simple =
+  Alcotest.test_case "simple example" `Quick @@ fun () ->
+  let decoder = Pecu.decoder (`String qp) in
+  let rec fill decoder buf = match Pecu.decode decoder with
+    | `Await -> assert false
+    | `Line line ->
+      Buffer.add_string buf line ;
+      Buffer.add_char buf '\n' ;
+      fill decoder buf
+    | `Data str ->
+      Buffer.add_string buf str ;
+      fill decoder buf
+    | `Malformed err -> Alcotest.fail err
+    | `End -> Buffer.contents buf in
+  let result = fill decoder (Buffer.create 0x100) in
+  Alcotest.(check string) "contents" result citadelle
+
 let tests () =
   Alcotest.run "pecu"
-    [("input fuzz", List.map test (walk "contents")); ("rfc2047", rfc2047)]
+    [("input fuzz", List.map test (walk "contents")); ("simple", [ simple ]); ("rfc2047", rfc2047)]
 
 let () = tests ()
