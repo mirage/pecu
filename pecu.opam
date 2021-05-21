@@ -21,4 +21,5 @@ depends: [
   "fmt" {with-test}
   "alcotest" {with-test}
   "crowbar" {with-test}
+  "astring" {with-test}
 ]
