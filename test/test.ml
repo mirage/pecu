@@ -189,8 +189,33 @@ let simple =
   let result = fill decoder (Buffer.create 0x100) in
   Alcotest.(check string) "contents" result citadelle
 
+type pecu = [ `Await | `Data of string | `Line of string | `Malformed of string | `End ]
+
+let print_and_return v = match v with
+  | `Await -> Fmt.pr "`Await.\n%!" ; v
+  | `Data data -> Fmt.pr "`Data %S.\n%!" data ; v
+  | `Line line -> Fmt.pr "`Line %S.\n%!" line ; v
+  | `Malformed err -> Fmt.pr "`Malformed %S.\n%!" err ; v
+  | `End -> Fmt.pr "`End.\n%!" ; v
+
+let split_at_cr =
+  Alcotest.test_case "split at cr" `Quick @@ fun () ->
+  let decoder = Pecu.decoder `Manual in
+  let[@warning "-8"] `Await : pecu = Pecu.decode decoder in
+  Pecu.src decoder (Bytes.of_string "Hello=20World!\r") 0 15 ;
+  let[@warning "-8"] `Await : pecu = Pecu.decode decoder in
+  Pecu.src decoder (Bytes.of_string "\n") 0 1 ;
+  let[@warning "-8"] (`Line line : pecu) = print_and_return (Pecu.decode decoder) in
+  Alcotest.(check string) "Hello World!" line "Hello World!" ;
+  let[@warning "-8"] `Await : pecu = Pecu.decode decoder in
+  Pecu.src decoder Bytes.empty 0 0 ;
+  let[@warning "-8"] (`Data str : pecu) = Pecu.decode decoder in
+  Alcotest.(check string) "trailer" str "" ;
+  let[@warning "-8"] `End : pecu = print_and_return (Pecu.decode decoder) in
+  Alcotest.(check pass) "end of input" () ()
+
 let tests () =
   Alcotest.run "pecu"
-    [("input fuzz", List.map test (walk "contents")); ("simple", [ simple ]); ("rfc2047", rfc2047)]
+    [("input fuzz", List.map test (walk "contents")); ("simple", [ simple; split_at_cr ]); ("rfc2047", rfc2047)]
 
 let () = tests ()
