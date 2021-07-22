@@ -51,7 +51,8 @@ let r_line_break source off len =
   (* assert (l = 2); *)
   match Bytes.sub_string source off len with
   | "\r\n" -> `Line_break
-  | _ -> malformed source off 0 len
+  | _str ->
+    malformed source off 0 len
 
 type src = [`Channel of in_channel | `String of string | `Manual]
 
@@ -218,7 +219,7 @@ and decode_quoted_printable decoder =
         Buffer.clear decoder.w ;
         decoder.i_pos <- decoder.i_pos + 1 ;
         ret decode_quoted_printable (r_chr chr) 1 decoder
-    | _ ->
+    | _chr ->
         (* XXX(dinosaure): If characters other than HT, CR, LF or octets with
            decimal values greater than 126 found in incoming quoted-printable
            data by a decoder, a robust implementation might exclude them from
