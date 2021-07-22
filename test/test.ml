@@ -198,6 +198,8 @@ let print_and_return v = match v with
   | `Malformed err -> Fmt.pr "`Malformed %S.\n%!" err ; v
   | `End -> Fmt.pr "`End.\n%!" ; v
 
+[@@@warning "-8"]
+
 let split_at_cr =
   Alcotest.test_case "split at cr" `Quick @@ fun () ->
   let decoder = Pecu.decoder `Manual in
@@ -213,6 +215,8 @@ let split_at_cr =
   Alcotest.(check string) "trailer" str "" ;
   let[@warning "-8"] `End : pecu = print_and_return (Pecu.decode decoder) in
   Alcotest.(check pass) "end of input" () ()
+
+[@@@warning "+8"]
 
 let tests () =
   Alcotest.run "pecu"
