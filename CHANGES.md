@@ -1,3 +1,11 @@
+v0.6 2021-07-26 Paris (France)
+------------------------------------
+
+* Fix a bug when we decode contents (@dinosaure, #7)
+* Lint OPAM file (@dinosaure, #8)
+* Add missing dune constraint (@kit-ty-kate, @dinosaure, #9)
+* Add regression tests (@dinosaure, #10)
+
 v0.5 2020-11-26 Paris (France)
 ------------------------------------
 
