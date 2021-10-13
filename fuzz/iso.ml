@@ -98,6 +98,6 @@ let () =
     ; Crowbar.check_eq ~pp:pp_string u v
   with
   | Bigger_than_80_column o ->
-    Fmt.kstrf Crowbar.fail "Encoded value does not fit on 80 columns: @[%a@]" pp_string o
+    Fmt.kstr Crowbar.fail "Encoded value does not fit on 80 columns: @[%a@]" pp_string o
   | Malformed err ->
-    Fmt.kstrf Crowbar.fail "Malformed encoding value: @[%a@]" pp_string err
+    Fmt.kstr Crowbar.fail "Malformed encoding value: @[%a@]" pp_string err

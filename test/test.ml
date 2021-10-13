@@ -121,7 +121,7 @@ let test file =
 
 let rfc2047 =
   let make i (value, expect) =
-    Alcotest.test_case (Fmt.strf "rfc2047:%d" i) `Quick
+    Alcotest.test_case (Fmt.str "rfc2047:%d" i) `Quick
     @@ fun () ->
     let decoder = Pecu.Inline.decoder (`String value) in
     let buffer = Buffer.create (String.length value) in
@@ -142,10 +142,10 @@ let rfc2047 =
     let () = ignore @@ Pecu.Inline.encode encoder `End in
     let result1 = Buffer.contents buffer in
     Alcotest.(check string)
-      (Fmt.strf "compare %s with %s" result0 expect)
+      (Fmt.str "compare %s with %s" result0 expect)
       result0 expect ;
     Alcotest.(check string)
-      (Fmt.strf "compare %s with %s" result1 value)
+      (Fmt.str "compare %s with %s" result1 value)
       result1 value ;
   in
   List.mapi make
