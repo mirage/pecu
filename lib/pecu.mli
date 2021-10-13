@@ -14,7 +14,7 @@
 type decoder
 
 (** The type for input sources. With a [`Manual] source the client must provide
-    input with {!src}. *)
+    input with {!val:src}. *)
 type src = [`Manual | `Channel of in_channel | `String of string]
 
 type decode =
@@ -22,7 +22,7 @@ type decode =
 
 val src : decoder -> Bytes.t -> int -> int -> unit
 (** [src d s j l] provides [d] with [l] bytes to read, starting at [j] in [s].
-    This byte range is read by calls to {!decode} with [d] until [`Await] is
+    This byte range is read by calls to {!val:decode} with [d] until [`Await] is
     returned. To signal the end of input, call the function with [l = 0]. *)
 
 val decoder : src -> decoder
@@ -33,7 +33,7 @@ val decode : decoder -> decode
 
     {ul
     {- [`Await] if [d] has a [`Manual] input source and awaits for more input.
-   The client must use {!src} to provide it.}
+   The client must use {!val:src} to provide it.}
     {- [`End] if the end of input was reached.}
     {- [`Malformed bytes] if the [bytes] sequence is malformed according to the
    decoded quoted-printable encoding scheme. If you are interested in a
@@ -47,7 +47,7 @@ val decode : decoder -> decode
 
 val decoder_byte_count : decoder -> int
 (** [decoder_byte_count d] is the number of characters already decoded on [d]
-    (included malformed ones). This is the last {!decode}'s end output offset
+    (included malformed ones). This is the last {!val:decode}'s end output offset
     counting from beginning of the stream. *)
 
 val decoder_src : decoder -> src
@@ -63,7 +63,7 @@ val decoder_dangerous : decoder -> bool
 (** {2:encode Encode} *)
 
 (** The type for output destinations. With a [`Manual] destination the client
-    must provide output storage with {!dst}. *)
+    must provide output storage with {!val:dst}. *)
 type dst = [`Channel of out_channel | `Buffer of Buffer.t | `Manual]
 
 type encode = [`Await | `End | `Char of char | `Line_break]
@@ -79,8 +79,8 @@ val encode : encoder -> encode -> [`Ok | `Partial]
 
     {ul
     {- [`Partial] iff [e] has a [`Manual] destination and needs more output
-   storage. The client must use {!dst} to provide a new buffer and then call
-   {!encode} with [`Await] until [`Ok] is returned.}
+   storage. The client must use {!val:dst} to provide a new buffer and then call
+   {!val:encode} with [`Await] until [`Ok] is returned.}
     {- [`Ok] when the encoder is ready to encode a new [`Char], [`Line_break] or
    [`End]}}
 
@@ -97,13 +97,13 @@ val encoder_dst : encoder -> dst
 
 val dst : encoder -> Bytes.t -> int -> int -> unit
 (** [dst e s j l] provides [e] with [l] bytes to write, starting at [j] in [s].
-    This byte range is written by calls to {!encode} with [e] until [`Partial]
-    is returned. Use {!dst_rem} to know the remaining number of non-written
+    This byte range is written by calls to {!val:encode} with [e] until [`Partial]
+    is returned. Use {!val:dst_rem} to know the remaining number of non-written
     free bytes in [s]. *)
 
 val dst_rem : encoder -> int
 (** [dst_rem e] is the remaining number of non-written, free bytes in the last
-    buffer provided with {!dst}. *)
+    buffer provided with {!val:dst}. *)
 
 module Inline : sig
   (** {3:decode-inline Decode inline quoted-printable value.}
@@ -121,7 +121,7 @@ module Inline : sig
 
   val src : decoder -> Bytes.t -> int -> int -> unit
   (** [src d s j l] provides [d] with [l] bytes to read, starting at [j] in
-      [s]. This byte range is read by calls to {!decode} with [d] until
+      [s]. This byte range is read by calls to {!val:decode} with [d] until
       [`Await] is returned. To signal the end of input, call the function with
       [l = 0]. *)
 
@@ -133,7 +133,7 @@ module Inline : sig
 
       {ul
       {- [`Await] if [d] has a [`Manual] input source and awaits for more input.
-     The client must use {!src} to provide it.}
+     The client must use {!val:src} to provide it.}
       {- [`End] if the end of input was reached.}
       {- [`Malformed bytes] if the [bytes] sequence is malformed according to
      the decoded quoted-printable encoding scheme. If you are interested in a
@@ -148,7 +148,7 @@ module Inline : sig
 
   val decoder_byte_count : decoder -> int
   (** [decoder_byte_count d] is the number of characters already decoded on [d]
-      (included malformed ones). This is the last {!decode}'s end output offset
+      (included malformed ones). This is the last {!val:decode}'s end output offset
       counting from beginning of the stream. *)
 
   val decoder_src : decoder -> src
@@ -167,8 +167,8 @@ module Inline : sig
 
       {ul
       {- [`Partial] iff [e] has a [`Manual] destination and needs more output
-     storage. The client must use {!dst} to provide a new buffer and then call
-     {!encode} with [`Await] until [`Ok] is returned.}
+     storage. The client must use {!val:dst} to provide a new buffer and then call
+     {!val:encode} with [`Await] until [`Ok] is returned.}
       {- [`Ok] when the encoder is ready to encode a new [`Char], [`Line_break] or
      [`End]}}
 
@@ -185,13 +185,13 @@ module Inline : sig
 
   val dst : encoder -> Bytes.t -> int -> int -> unit
   (** [dst e s j l] provides [e] with [l] bytes to write, starting at [j] in [s].
-     This byte range is written by calls to {!encode} with [e] until [`Partial]
+     This byte range is written by calls to {!val:encode} with [e] until [`Partial]
      is returned. Use {!dst_rem} to know the remaining number of non-written
      free bytes in [s]. *)
 
   val dst_rem : encoder -> int
   (** [dst_rem e] is the remaining number of non-written, free bytes in the last
-     buffer provided with {!dst}. *)
+     buffer provided with {!val:dst}. *)
 end
 
 
