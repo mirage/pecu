@@ -158,13 +158,13 @@ let rfc2047 =
     ; ("Patrick_F=E4ltstr=F6m", "Patrick F\xe4ltstr\xf6m") ]
 
 let qp =
-{qp|J'interdis aux marchands de vanter trop leurs marchandises. Car ils se font=
- vite p=C3=A9dagogues et t'enseignent comme but ce qui n'est par essence qu=
-'un moyen, et te trompant ainsi sur la route =C3=A0 suivre les voil=C3=A0 =
-bient=C3=B4t qui te d=C3=A9gradent, car si leur musique est vulgaire il=
-s te fabriquent pour te la vendre une =C3=A2me vulgaire.            
-   =E2=80=94=E2=80=89Antoine de Saint-Exup=C3=A9ry, Citadelle (1948)
-
+{qp|J'interdis aux marchands de vanter trop leurs marchandises. Car ils se font=|qp}^"\r"^{qp|
+ vite p=C3=A9dagogues et t'enseignent comme but ce qui n'est par essence qu=|qp}^"\r"^{qp|
+'un moyen, et te trompant ainsi sur la route =C3=A0 suivre les voil=C3=A0 =|qp}^"\r"^{qp|
+bient=C3=B4t qui te d=C3=A9gradent, car si leur musique est vulgaire il=|qp}^"\r"^{qp|
+s te fabriquent pour te la vendre une =C3=A2me vulgaire.            |qp}^"\r"^{qp|
+   =E2=80=94=E2=80=89Antoine de Saint-Exup=C3=A9ry, Citadelle (1948)|qp}^"\r"^{qp|
+|qp}^"\r"^{qp|
 |qp}
 
 let citadelle = {unicode|J'interdis aux marchands de vanter trop leurs marchandises. Car ils se font vite pédagogues et t'enseignent comme but ce qui n'est par essence qu'un moyen, et te trompant ainsi sur la route à suivre les voilà bientôt qui te dégradent, car si leur musique est vulgaire ils te fabriquent pour te la vendre une âme vulgaire.
