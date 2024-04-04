@@ -1,3 +1,9 @@
+v0.7 2024-04-04 Paris (France)
+------------------------------------
+
+* Upgrade the distribution with `fmt.0.8.7` (@dinosaure, #12)
+* Upgrade tests to be compatible with OCaml 5.2 (@kit-ty-kate, #14)
+
 v0.6 2021-07-26 Paris (France)
 ------------------------------------
 
